@@ -1,0 +1,30 @@
+# Build output (CMake builds out of source, so these directories cover everything generated)
+build/
+out/
+cmake-build-*/
+
+# Personal CMake presets (CMakePresets.json is shared and committed)
+CMakeUserPresets.json
+
+# Tooling caches
+.cache/
+compile_commands.json
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*~
+
+# Secrets and local deployment config (only the example is committed)
+.env
+!.env.example
+
+# Runtime artifacts from running the server locally
+*.db
+*.db-wal
+*.db-shm
+metrics/
+*.log
+core
+core.*

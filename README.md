@@ -22,7 +22,7 @@ Simul does not depend on SurfaceEditor. The integration lives on the SurfaceEdit
 ```mermaid
 flowchart LR
     subgraph simul["Simul repository (this repo)"]
-        libs["libraries<br/>common · protocol · net · server_core · client"]
+        libs["libraries<br/>common · protocol · net · server-core · client"]
         server["simul-server<br/>executable"]
     end
 
@@ -94,7 +94,7 @@ Available presets: `debug`, `release`, `asan` (AddressSanitizer + UndefinedBehav
 ## Repository layout
 
 ```
-libs/       libraries (common, protocol, net, server_core, client)
+libs/       libraries (common, protocol, net, server-core, client)
 apps/       executables (simul-server, simul-bot)
 tests/      unit tests (simul-tests)
 cmake/      CMake helper modules (dependencies, compiler warnings)

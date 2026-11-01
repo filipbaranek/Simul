@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    # TODO: remove CD-release before merging (only for testing this workflow on the branch).
+    branches: [main, CD-release]
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/filipbaranek/simul-server
+
+jobs:
+  # Tags are tested too: a tag can point at a commit that never went through a PR.
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  image:
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.meta.outputs.deploy-tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # A tag vX.Y.Z builds release X.Y.Z. Other builds report the last release in their history,
+      # like cmake/git-version.cmake (the Docker build has no .git to read it from).
+      - name: Resolve version and tags
+        id: meta
+        run: |
+          short=${GITHUB_SHA::7}
+          if [[ $GITHUB_REF_TYPE == tag ]]; then
+            if [[ ! $GITHUB_REF_NAME =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+              echo "::error::Tag '$GITHUB_REF_NAME' is not vX.Y.Z"
+              exit 1
+            fi
+            version=${BASH_REMATCH[1]}
+            tags="$version latest"
+            deploy_tag=$version
+          else
+            last=$(git tag --merged HEAD --list 'v*' --sort=-v:refname \
+                   | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)
+            version=${last#v}
+            version=${version:-0.0.0}
+            tags="sha-$short"
+            [[ $GITHUB_REF_NAME == main ]] && tags+=" main"
+            deploy_tag=sha-$short
+          fi
+          {
+            echo "version=$version"
+            echo "tags=$tags"
+            echo "deploy-tag=$deploy_tag"
+          } >> "$GITHUB_OUTPUT"
+          echo "Version $version, tags: $tags"
+
+      - name: Build image
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: >
+          docker build
+          --build-arg SIMUL_VERSION="$VERSION"
+          --build-arg SIMUL_BUILD_SHA="$GITHUB_SHA"
+          --label org.opencontainers.image.source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          --label org.opencontainers.image.revision="$GITHUB_SHA"
+          --label org.opencontainers.image.version="$VERSION"
+          -t simul-server:release .
+
+      - name: Check reported version
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          reported=$(docker run --rm simul-server:release --version)
+          echo "$reported"
+          test "$reported" = "simul-server $VERSION ($GITHUB_SHA)"
+
+      - name: Log in to ghcr.io
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Push image
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          for tag in $TAGS; do
+            docker tag simul-server:release "$IMAGE:$tag"
+            docker push "$IMAGE:$tag"
+          done
+
+  # TODO: deploy-staging → smoke-staging after image; for tags then deploy-prod → smoke-prod with
+  # rollback. Gated by vars.DEPLOY_ENABLED.
+
+  github-release:
+    if: github.ref_type == 'tag'
+    # TODO: wait for the prod smoke test once it exists.
+    needs: image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          gh release create "$GITHUB_REF_NAME"
+          --repo "$GITHUB_REPOSITORY"
+          --verify-tag
+          --generate-notes
+          --title "Simul $GITHUB_REF_NAME"

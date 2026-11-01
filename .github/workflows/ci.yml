@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    # Not tags: releases are handled by release.yml.
+    # TODO: ignore main once release.yml calls this workflow.
+    branches: ['**']
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel superseded runs on a branch, never on main.
+concurrency:
+  group: ci-${{ github.ref_name == 'main' && github.run_id || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: unit (${{ matrix.name }})
+    # Pinned: GCC 14 and Clang 18 are the minimum supported compilers.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: gcc-14 release
+            preset: release
+            cxx: g++-14
+          - name: gcc-14 asan+ubsan
+            preset: asan
+            cxx: g++-14
+          - name: clang-18 debug
+            preset: debug
+            cxx: clang++-18
+    env:
+      UBSAN_OPTIONS: print_stacktrace=1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configure
+        run: >
+          cmake --preset ${{ matrix.preset }}
+          -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+          -DSIMUL_BUILD_SHA=${{ github.sha }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}

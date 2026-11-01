@@ -1,0 +1,10 @@
+# C++ dependencies come from FetchContent and are updated by hand in cmake/dependencies.cmake.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      github-actions:
+        patterns: ['*']

@@ -2,8 +2,7 @@ name: Release
 
 on:
   push:
-    # TODO: remove CD-release before merging (only for testing this workflow on the branch).
-    branches: [main, CD-release]
+    branches: [main]
     tags: ['v*.*.*']
 
 permissions:

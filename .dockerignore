@@ -1,0 +1,7 @@
+# Whitelist: only what the image build needs.
+*
+!CMakeLists.txt
+!CMakePresets.json
+!cmake/
+!libs/
+!apps/

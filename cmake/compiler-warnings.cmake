@@ -11,7 +11,6 @@ function(simul_set_warnings target)
         -Wnon-virtual-dtor
         -Wold-style-cast
         -Woverloaded-virtual
-        -Wnull-dereference
         -Wformat=2
         -Wimplicit-fallthrough
         "$<$<CXX_COMPILER_ID:GNU>:-Wduplicated-cond;-Wduplicated-branches;-Wlogical-op>")

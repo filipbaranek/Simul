@@ -53,3 +53,39 @@ jobs:
 
       - name: Test
         run: ctest --preset ${{ matrix.preset }}
+
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build image
+        run: docker build --build-arg SIMUL_BUILD_SHA=${{ github.sha }} -t simul-server:ci .
+
+      - name: Check reported commit
+        run: docker run --rm simul-server:ci --version | grep -F ${{ github.sha }}
+
+      - name: Start server
+        run: docker run -d --name simul-server -p 7777:7777 simul-server:ci
+
+      # TODO: replace with simul-bot once the protocol exists.
+      - name: Check that the server accepts connections
+        run: |
+          for _ in $(seq 20); do
+            timeout 1 bash -c '</dev/tcp/127.0.0.1/7777' && exit 0
+            sleep 0.5
+          done
+          exit 1
+
+      # Exit code 0 means the server stopped on SIGTERM; 137 means it ignored it and was killed.
+      - name: Stop server
+        run: |
+          docker stop --time 5 simul-server
+          test "$(docker inspect --format '{{.State.ExitCode}}' simul-server)" = 0
+
+      - name: Server log
+        if: always()
+        run: docker logs simul-server

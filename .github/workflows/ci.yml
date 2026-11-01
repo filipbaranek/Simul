@@ -2,9 +2,8 @@ name: CI
 
 on:
   push:
-    # Not tags: releases are handled by release.yml.
-    # TODO: ignore main once release.yml calls this workflow.
-    branches: ['**']
+    # Not tags, and not main: release.yml calls this workflow for those.
+    branches: ['**', '!main']
   workflow_call:
   workflow_dispatch:
 

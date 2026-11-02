@@ -104,6 +104,8 @@ jobs:
     if: vars.DEPLOY_ENABLED == 'true'
     needs: image
     uses: ./.github/workflows/deploy.yml
+    # Without it, the called workflow doesn't get the environment's secrets either.
+    secrets: inherit
     with:
       environment: staging
       tag: ${{ needs.image.outputs.tag }}
@@ -112,6 +114,7 @@ jobs:
     if: github.ref_type == 'tag' && vars.DEPLOY_ENABLED == 'true'
     needs: [image, staging]
     uses: ./.github/workflows/deploy.yml
+    secrets: inherit
     with:
       environment: production
       tag: ${{ needs.image.outputs.tag }}

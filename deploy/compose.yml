@@ -1,0 +1,17 @@
+# One file for both environments; the per-environment values, including the project name
+# (COMPOSE_PROJECT_NAME, not `name:`, which podman-compose 1.5 doesn't interpolate), are in .env.
+
+services:
+  server:
+    image: ${SIMUL_IMAGE:-ghcr.io/filipbaranek/simul-server}:${SIMUL_IMAGE_TAG:?SIMUL_IMAGE_TAG is not set}
+    # podman-restart.service brings back only containers with this policy after a reboot.
+    restart: always
+    ports:
+      - ${SIMUL_PUBLIC_PORT:?SIMUL_PUBLIC_PORT is not set}:7777
+    volumes:
+      - data:/var/lib/simul
+    stop_grace_period: 10s
+
+volumes:
+  # Never remove it (no `down -v`): it will hold the SQLite database and the metrics.
+  data:

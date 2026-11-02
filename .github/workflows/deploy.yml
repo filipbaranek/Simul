@@ -1,0 +1,100 @@
+name: Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      tag:
+        type: string
+        required: true
+  # Manual redeploy or rollback: any image tag that exists in ghcr.io.
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [staging, production]
+        required: true
+      tag:
+        description: Image tag (sha-abc1234, 1.2.3)
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: deploy (${{ inputs.environment }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    env:
+      ENVIRONMENT: ${{ inputs.environment }}
+      TAG: ${{ inputs.tag }}
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+    steps:
+      # The values end up in a remote shell command, so they are checked before anything connects.
+      - name: Check inputs
+        run: |
+          [[ $ENVIRONMENT =~ ^(staging|production)$ ]] || { echo "::error::Unknown environment '$ENVIRONMENT'"; exit 1; }
+          [[ $TAG =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "::error::Invalid tag '$TAG'"; exit 1; }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ vars.SSH_KNOWN_HOSTS }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy-key
+          chmod 600 ~/.ssh/deploy-key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host server
+            HostName $DEPLOY_HOST
+            Port $DEPLOY_PORT
+            User $DEPLOY_USER
+            IdentityFile ~/.ssh/deploy-key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            BatchMode yes
+            ConnectTimeout 20
+            ServerAliveInterval 15
+          EOF
+
+      # Per environment, so a running deploy's script is never overwritten by the other environment's.
+      - name: Copy deploy files
+        run: |
+          scp deploy/deploy.sh "server:simul/$ENVIRONMENT/deploy.sh"
+          scp deploy/compose.yml "server:simul/$ENVIRONMENT/compose.yml.next"
+
+      # Rolls back by itself if the new container doesn't start.
+      - name: Deploy
+        run: ssh server bash "simul/$ENVIRONMENT/deploy.sh" "$ENVIRONMENT" "$TAG"
+
+      # TODO: replace with simul-bot (and check the build sha) once the protocol exists.
+      - name: Smoke test
+        id: smoke
+        env:
+          PORT: ${{ vars.SIMUL_PUBLIC_PORT }}
+        run: |
+          for _ in $(seq 10); do
+            timeout 3 bash -c '</dev/tcp/$0/$1' "$DEPLOY_HOST" "$PORT" && exit 0
+            sleep 2
+          done
+          echo "::error::$DEPLOY_HOST:$PORT does not accept connections"
+          exit 1
+
+      - name: Roll back
+        if: failure() && steps.smoke.outcome == 'failure'
+        run: ssh server bash "simul/$ENVIRONMENT/deploy.sh" "$ENVIRONMENT" rollback

@@ -99,13 +99,27 @@ jobs:
             docker push "$IMAGE:$tag"
           done
 
-  # TODO: deploy-staging → smoke-staging after image; for tags then deploy-prod → smoke-prod with
-  # rollback. Gated by vars.DEPLOY_ENABLED.
-
-  github-release:
-    if: github.ref_type == 'tag'
-    # TODO: wait for the prod smoke test once it exists.
+  # A release goes through staging first, so prod gets an image that just passed there.
+  staging:
+    if: vars.DEPLOY_ENABLED == 'true'
     needs: image
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: staging
+      tag: ${{ needs.image.outputs.tag }}
+
+  production:
+    if: github.ref_type == 'tag' && vars.DEPLOY_ENABLED == 'true'
+    needs: [image, staging]
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: production
+      tag: ${{ needs.image.outputs.tag }}
+
+  # Also runs when deploys are disabled (production skipped), but not after a failed deploy.
+  github-release:
+    if: github.ref_type == 'tag' && !cancelled() && !failure()
+    needs: production
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
